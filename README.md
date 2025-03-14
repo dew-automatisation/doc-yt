@@ -1,3 +1,3 @@
 # doc-yt
 
-[Chaine investir](/investir/
+[Chaine investir](/investir/)
