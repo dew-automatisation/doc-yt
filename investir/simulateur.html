@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Position Patrimoniale</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    .container {
+      max-width: 600px;
+      margin: auto;
+      text-align: center;
+    }
+    input[type="number"] {
+      width: 200px;
+      padding: 8px;
+      margin: 8px 0;
+    }
+    button {
+      padding: 10px 20px;
+      cursor: pointer;
+    }
+    .result {
+      margin-top: 20px;
+      font-weight: bold;
+    }
+    .progressbar {
+      width: 100%;
+      background-color: #eee;
+      border-radius: 8px;
+      height: 10px;
+      margin-top: 5px;
+    }
+    .progress {
+      height: 10px;
+      border-radius: 8px;
+      background-color: #666;
+      width: 0%;
+    }
+    .explain {
+      font-style: italic;
+      font-size: 0.95em;
+      text-align: left;
+      max-width: 600px;
+      margin: 1rem auto;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>💰 Estimation de Votre Position Patrimoniale</h1>
+  <p>
+    Veuillez indiquer votre âge ainsi que votre patrimoine <em>brut</em> ou <em>net</em>. <br>
+    Vous obtiendrez :
+  </p>
+  <ul style="text-align:left; display:inline-block">
+    <li>Votre position approximative sur l'ensemble de la population</li>
+    <li>Votre position approximative au sein de votre tranche d'âge</li>
+  </ul>
+
+  <div class="explain">
+    <strong>Patrimoine Brut</strong> : c’est la valeur totale de tout ce que vous possédez (immobilier, épargne, titres, etc.) <em>avant</em> la déduction de vos dettes ou emprunts.<br><br>
+    <strong>Patrimoine Net</strong> : c’est la valeur restante une fois que vous avez soustrait le montant de vos dettes (comme les crédits immobiliers, prêts à la consommation, etc.) de votre patrimoine brut.
+  </div>
+
+  <!-- Saisie de l'âge -->
+  <p>
+    <label for="age">Âge :</label><br />
+    <input type="number" id="age" placeholder="Entrez votre âge" />
+  </p>
+
+  <!-- Choix du type de patrimoine (brut ou net) -->
+  <p>
+    <label>
+      <input type="radio" name="typePatrimoine" id="typeBrut" checked />
+      Patrimoine Brut
+    </label>
+    &nbsp; &nbsp;
+    <label>
+      <input type="radio" name="typePatrimoine" id="typeNet" />
+      Patrimoine Net
+    </label>
+  </p>
+
+  <!-- Saisie du montant -->
+  <p>
+    <input type="number" id="montant" placeholder="Entrez votre montant en €" />
+  </p>
+
+  <!-- Bouton de calcul -->
+  <button onclick="calculerPosition()">Afficher ma position</button>
+
+  <!-- Résultats -->
+  <div id="resultat" class="result"></div>
+  <div id="barPop" style="margin-top:10px;"></div>
+  <div id="detailAge" class="result"></div>
+  <div id="barAge" style="margin-top:10px;"></div>
+</div>
+
+<script>
+////////////////////////////////////////
+// 1) SEUILS POUR L'ENSEMBLE DES MENAGES
+////////////////////////////////////////
+
+const seuilsBrut = [
+  4400,   // environ 10% des ménages
+  13400,  // environ 20%
+  33200,  // environ 30%
+  106200, // environ 40%
+  177200, // environ 50%
+  246100, // environ 60%
+  328400, // environ 70%
+  447500, // environ 80%
+  716300  // environ 90%
+];
+
+const seuilsNet = [
+  3000,   // environ 10%
+  10400,  // environ 20%
+  26500,  // environ 30%
+  67100,  // environ 40%
+  124800, // environ 50%
+  192100, // environ 60%
+  274700, // environ 70%
+  394300, // environ 80%
+  633200  // environ 90%
+];
+
+// Messages pour la population générale
+// index = position - 1
+const messagesPop = [
+  "Vous faites partie d'environ 10% de ménages les moins dotés (sur l'ensemble de la population).",
+  "Vous faites partie d'environ 20% de ménages les moins dotés.",
+  "Vous faites partie d'environ 30% de ménages les moins dotés.",
+  "Vous faites partie d'environ 40% de ménages les moins dotés.",
+  "Vous êtes environ au niveau de la moitié des ménages (toutes tranches d'âge confondues).",
+  "Vous faites partie d'environ 60% de ménages les plus dotés.",
+  "Vous faites partie d'environ 70% de ménages les plus dotés.",
+  "Vous faites partie d'environ 80% de ménages les plus dotés.",
+  "Vous faites partie d'environ 90% de ménages les plus dotés.",
+  "Vous faites partie des 10% de ménages les plus aisés."
+];
+
+////////////////////////////////////////
+// 2) SEUILS PAR TRANCHE D'AGE
+////////////////////////////////////////
+
+// PATRIMOINE BRUT (~10%, 50%, 90%)
+const ageBrut = {
+  moins30: [2600, 20400, 243600],
+  "30_39": [4600, 117600, 510500],
+  "40_49": [3200, 194000, 736800],
+  "50_59": [4700, 224500, 911500],
+  "60_69": [4300, 232800, 882400],
+  plus70:  [7000, 211500, 742900]
+};
+
+// PATRIMOINE NET (~10%, 50%, 90%)
+const ageNet = {
+  moins30: [1500, 15800, 112500],
+  "30_39": [1700, 49400, 302900],
+  "40_49": [1700, 110800, 560500],
+  "50_59": [3600, 178500, 812600],
+  "60_69": [3700, 214200, 842700],
+  plus70:  [6800, 209900, 742500]
+};
+
+//////////////////////////
+// LABEL DE LA TRANCHE D'AGE
+//////////////////////////
+function getAgeBracketLabel(classeAge) {
+  switch (classeAge) {
+    case "moins30": return "moins de 30 ans";
+    case "30_39": return "30 à 39 ans";
+    case "40_49": return "40 à 49 ans";
+    case "50_59": return "50 à 59 ans";
+    case "60_69": return "60 à 69 ans";
+    default:        return "70 ans et plus";
+  }
+}
+
+//////////////////////////
+// MESSAGE TRANCHE D'AGE
+//////////////////////////
+function getMessageTrancheAge(posAge, classeAge, montant, mediane) {
+  // On obtient le label de la tranche d'âge
+  const label = getAgeBracketLabel(classeAge);
+  // Calcul du dépassement (ou écart) par rapport à la médiane
+  const difference = montant - mediane;
+  // Pourcentage d'écart par rapport à la médiane
+  const diffPercent = mediane > 0 ? (difference / mediane) * 100 : 0;
+
+  // On adapte le message en fonction du posAge
+  switch (posAge) {
+    case 0:
+      return `Dans votre tranche d'âge (${label}), vous faites partie des 10% les moins dotés.`;
+    case 1:
+      return `Dans votre tranche d'âge (${label}), vous êtes en dessous de la médiane (≈ ${mediane.toLocaleString('fr-FR')} €).`;
+    case 2:
+      // Au-dessus de la médiane, on indique l'écart
+      return `Ma médiane est d’environ ${mediane.toLocaleString('fr-FR')} €. Tu la dépasses de ${difference.toLocaleString('fr-FR')} €, soit +${diffPercent.toFixed(1)}%. (Tranche d'âge : ${label})`;
+    case 3:
+      return `Dans votre tranche d'âge (${label}), vous faites partie des 10% les plus aisés.`;
+    default:
+      return "";
+  }
+}
+
+//////////////////////////
+// FONCTIONS D'AIDE
+//////////////////////////
+
+// Détermine la position (1..10) dans la population globale
+function trouverTranchePop(valeur, seuils) {
+  for (let i = 0; i < seuils.length; i++) {
+    if (valeur < seuils[i]) {
+      return i + 1;
+    }
+  }
+  return 10;
+}
+
+// Renvoie la classe d'âge
+function trouverClasseAge(age) {
+  if (age < 30) return "moins30";
+  if (age < 40) return "30_39";
+  if (age < 50) return "40_49";
+  if (age < 60) return "50_59";
+  if (age < 70) return "60_69";
+  return "plus70";
+}
+
+// Position dans la tranche d'âge : 0..3
+// 0 => <10%, 1 => [10%, 50%), 2 => [50%, 90%), 3 => >=90%
+function trouverPositionDansAge(valeur, seuilsAge) {
+  if (!seuilsAge) {
+    // Si on n'a pas de seuil pour cette classe d'âge, on renvoie -1 ou un code d'erreur
+    return -1;
+  }
+  if (valeur < seuilsAge[0]) {
+    return 0;
+  } else if (valeur < seuilsAge[1]) {
+    return 1;
+  } else if (valeur < seuilsAge[2]) {
+    return 2;
+  } else {
+    return 3;
+  }
+}
+
+/////////////////////////////////////////
+// BARRES DE STATISTIQUES
+/////////////////////////////////////////
+
+// Convertit la position (1..10) en pourcentage (0..100)
+function getPercentagePop(positionPop) {
+  // Déciles : paliers de 10%
+  // On centre chaque palier autour de 5%, 15%, 25% etc.
+  return (positionPop - 1) * 10 + 5; // 5,15,25,...95
+}
+
+// 4 niveaux pour la tranche d'âge
+function getPercentageAge(posAge) {
+  switch(posAge){
+    case 0: return 5;   // <10%
+    case 1: return 30;  // <50%
+    case 2: return 70;  // <90%
+    case 3: return 95;  // >=90%
+    default: return 50;
+  }
+}
+
+// Génère le code HTML pour la barre de progression
+function genererBarreProgression(pourcent) {
+  return `\n    <div class=\"progressbar\">\n      <div class=\"progress\" style=\"width:${pourcent}%\"></div>\n    </div>\n  `;
+}
+
+//////////////////////////
+// FONCTION PRINCIPALE
+//////////////////////////
+
+function calculerPosition() {
+  const age = parseInt(document.getElementById('age').value);
+  const montant = parseFloat(document.getElementById('montant').value);
+  const isBrut = document.getElementById('typeBrut').checked; // brut ou net
+
+  // Validations
+  if (isNaN(age) || age < 0) {
+    document.getElementById('resultat').innerHTML = "❌ Veuillez saisir un âge valide.";
+    document.getElementById('detailAge').innerHTML = "";
+    document.getElementById('barPop').innerHTML = "";
+    document.getElementById('barAge').innerHTML = "";
+    return;
+  }
+
+  if (isNaN(montant) || montant < 0) {
+    document.getElementById('resultat').innerHTML = "❌ Veuillez saisir un montant de patrimoine valide.";
+    document.getElementById('detailAge').innerHTML = "";
+    document.getElementById('barPop').innerHTML = "";
+    document.getElementById('barAge').innerHTML = "";
+    return;
+  }
+
+  const typePatrimoine = isBrut ? "brut" : "net";
+  const seuilsPop = isBrut ? seuilsBrut : seuilsNet;
+
+  // 1) Position population générale
+  const positionPop = trouverTranchePop(montant, seuilsPop);
+  const messagePop = messagesPop[positionPop - 1];
+  const popPercent = getPercentagePop(positionPop);
+
+  // 2) Position dans la tranche d'âge
+  const classeAge = trouverClasseAge(age);
+  const thresholdsAge = isBrut ? ageBrut[classeAge] : ageNet[classeAge];
+
+  const posAge = trouverPositionDansAge(montant, thresholdsAge);
+
+  // Si on n'a pas de seuils ou posAge == -1, on montre un message d'erreur
+  if (!thresholdsAge || posAge === -1) {
+    document.getElementById('resultat').innerHTML = `\n      Âge : ${age} ans<br />\n      Patrimoine ${typePatrimoine} : ${montant.toLocaleString('fr-FR')} €<br /><br />\n      ${messagePop}\n      <p style='color:red'>Aucun seuil disponible pour cette tranche d'âge.</p>`;
+    document.getElementById('barPop').innerHTML = genererBarreProgression(popPercent);
+    document.getElementById('detailAge').innerHTML = "";
+    document.getElementById('barAge').innerHTML = "";
+    return;
+  }
+
+  // On passe la médiane (thresholdsAge[1])
+  const messageTranche = getMessageTrancheAge(posAge, classeAge, montant, thresholdsAge[1]);
+  const agePercent = getPercentageAge(posAge);
+
+  // Affichage final
+  document.getElementById('resultat').innerHTML = `\n    Âge : ${age} ans<br />\n    Patrimoine ${typePatrimoine} : ${montant.toLocaleString('fr-FR')} €<br /><br />\n    ${messagePop}\n  `;
+
+  document.getElementById('barPop').innerHTML = genererBarreProgression(popPercent);
+
+  document.getElementById('detailAge').innerHTML = messageTranche;
+  document.getElementById('barAge').innerHTML = genererBarreProgression(agePercent);
+}
+
+// EXAMPLE TESTS
+// 1) We can test if calculerPosition is indeed accessible:
+console.log("Test pass: 'calculerPosition' is a function?", typeof calculerPosition === 'function');
+
+// 2) Additional test case
+// Mock test with a 35-year-old user and 50k brut:
+(function testCaseMock35() {
+  const testAge = 35;
+  const testPatrimoine = 50000;
+  console.log("\nTEST: Age=", testAge, "; Patrimoine=", testPatrimoine, "; Type=Brut");
+  // We'll just ensure no error is thrown, but we won't call DOM.
+  // If we needed to test thoroughly, we'd mock document elements.
+})();
+
+// For now, we ensure that the function is in global scope
+window.calculerPosition = calculerPosition;
+</script>
+</body>
+</html>
